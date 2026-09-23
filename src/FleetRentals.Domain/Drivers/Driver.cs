@@ -12,7 +12,11 @@ public sealed class Driver : Entity<DriverId>
 
     public DriverName Name { get; }
 
-    public static Driver Register(DriverId id, DriverName name)
+    public static Driver Register(DriverId id, DriverName name) => Create(id, name);
+
+    public static Driver Restore(DriverId id, DriverName name) => Create(id, name);
+
+    private static Driver Create(DriverId id, DriverName name)
     {
         ArgumentNullException.ThrowIfNull(id);
         ArgumentNullException.ThrowIfNull(name);

@@ -7,3 +7,9 @@ CREATE TABLE IF NOT EXISTS vehicles (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS vehicles_license_plate_unique ON vehicles (upper(license_plate));
+
+CREATE TABLE IF NOT EXISTS drivers (
+    id uuid PRIMARY KEY,
+    name varchar(200) NOT NULL,
+    CONSTRAINT drivers_name_not_blank CHECK (length(btrim(name)) > 0)
+);

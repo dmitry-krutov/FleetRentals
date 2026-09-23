@@ -14,6 +14,9 @@ public static class DependencyInjection
                 options.InvalidModelStateResponseFactory = context =>
                     ModelStateToEnvelopeMapper.ToBadRequest(context.ModelState));
 
+        services.ConfigureHttpJsonOptions(options =>
+            options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+
         services.AddSwaggerGen();
         return services;
     }

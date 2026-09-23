@@ -1,3 +1,4 @@
+using FleetRentals.Application.Features.Drivers;
 using FleetRentals.Application.Features.Vehicles;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,6 +17,7 @@ public static class DependencyInjection
         services.AddSingleton(_ => NpgsqlDataSource.Create(connectionString));
         services.AddSingleton<NpgsqlConnectionFactory>();
         services.AddScoped<IVehicleRepository, VehicleRepository>();
+        services.AddScoped<IDriverRepository, DriverRepository>();
 
         return services;
     }
