@@ -13,6 +13,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/FleetRentals.Application/FleetRentals.Application.csproj" />
-    <ProjectReference Include="../../src/FleetRentals.Domain/FleetRentals.Domain.csproj" />
+    <ProjectReference Include="../../src/FleetRentals.Persistence/FleetRentals.Persistence.csproj" />
+    <None Include="../../schema.sql" Link="schema.sql" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

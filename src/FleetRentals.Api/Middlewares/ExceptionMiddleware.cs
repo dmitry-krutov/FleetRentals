@@ -1,5 +1,4 @@
 using FleetRentals.Api.EndpointResults;
-using FleetRentals.Domain;
 using FleetRentals.Domain.Common;
 
 namespace FleetRentals.Api.Middlewares;
@@ -29,16 +28,12 @@ public class ExceptionMiddleware
 
     private async Task HandleExceptionAsync(HttpContext context, Exception exception)
     {
-        _logger.LogError(exception, exception.Message);
+        _logger.LogError(exception, "Unhandled exception while processing the request.");
 
-        (int statusCode, Error error) = exception switch
-        {
-            _ => (StatusCodes.Status500InternalServerError, Error.Failure("server.internal", exception.Message))
-        };
-
-        var envelope = Envelope.Error(error);
+        var envelope = Envelope.Error(Error.Internal(
+            "server.internal", "An unexpected server error occurred."));
         context.Response.ContentType = "application/json";
-        context.Response.StatusCode = statusCode;
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
 
         await context.Response.WriteAsJsonAsync(envelope);
     }
