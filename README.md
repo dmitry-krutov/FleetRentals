@@ -2,7 +2,26 @@
 
 The API is built with .NET 10, PostgreSQL, and Dapper. It implements vehicle and driver registration and lookup, plus rental start, finish, and lookup. HTTP routes use ASP.NET Core controllers. Each Application use case keeps its request and handler in one file under `Features/<feature>`.
 
-## Run locally
+## Quick start with Docker
+
+With Docker and Docker Compose installed, run this from the repository root:
+
+```bash
+docker compose up --build -d --wait
+```
+
+Open [Swagger UI](http://localhost:5294/swagger). The Compose stack starts the API and PostgreSQL, and applies `schema.sql` automatically when its database volume is first created. No local .NET SDK or manual SQL command is needed for this path. If port 5294 is occupied, run `FLEET_API_PORT=5295 docker compose up --build -d --wait` and open `http://localhost:5295/swagger`.
+
+To check the full flow in Swagger:
+
+1. `POST /vehicles` with `{"licensePlate":"AB-123"}` and `POST /drivers` with `{"name":"Alex Driver"}`. Copy the IDs from the `result` objects.
+2. `POST /rentals` with both IDs. `GET /vehicles/{id}` now shows `Rented`, and `GET /vehicles/{id}/active-rental` shows the rental and driver.
+3. Try the same rental again: the API returns 409 and leaves the first rental active.
+4. `POST /rentals/{id}/finish`. The vehicle is `Available` again; a new rental using the same vehicle and driver succeeds.
+
+Stop the demo with `docker compose down`. Data stays in the Docker volume. To start with an empty demo database, run `docker compose down -v` before starting again; this deletes only the demo stack's database volume.
+
+## Develop locally with the .NET SDK
 
 Start PostgreSQL:
 
@@ -22,7 +41,7 @@ Start the API:
 dotnet run --project src/FleetRentals.Api --launch-profile http
 ```
 
-Open [Swagger UI](http://localhost:5294/swagger) to call the API. The development connection string in `src/FleetRentals.Api/appsettings.Development.json` points to the Compose database. Override it with `ConnectionStrings__FleetRentals` for another PostgreSQL instance.
+Open [Swagger UI](http://localhost:5294/swagger) to call the API. The development connection string in `src/FleetRentals.Api/appsettings.Development.json` points to the infrastructure Compose database. Override it with `ConnectionStrings__FleetRentals` for another PostgreSQL instance. The infrastructure and demo Compose stacks use separate database volumes; only `compose.infra.yml` exposes PostgreSQL on host port 21016.
 
 For future schema changes to an existing database, add an explicit migration or `ALTER` script; `CREATE TABLE IF NOT EXISTS` does not update existing tables.
 
@@ -57,4 +76,4 @@ Starting a rental returns 400 for invalid identifiers, 404 when the vehicle or d
 
 ## Tests
 
-Run unit tests with `dotnet test tests/FleetRentals.UnitTests`. With the Compose database running, run the PostgreSQL tests with `dotnet test tests/FleetRentals.IntegrationTests`. Set `FLEET_RENTALS_TEST_CONNECTION` to override the integration test connection string. Each integration test uses a temporary schema and removes it afterward.
+Run unit tests with `dotnet test tests/FleetRentals.UnitTests`. With the `compose.infra.yml` database running, run the PostgreSQL tests with `dotnet test tests/FleetRentals.IntegrationTests`. Set `FLEET_RENTALS_TEST_CONNECTION` to override the integration test connection string. Each integration test uses a temporary schema and removes it afterward.

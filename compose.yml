@@ -1,0 +1,31 @@
+name: fleet-rentals-demo
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: fleet_rentals
+      POSTGRES_USER: fleet_rentals
+      POSTGRES_PASSWORD: fleet_rentals
+    volumes:
+      - fleet-rentals-demo-db:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fleet_rentals -d fleet_rentals"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  api:
+    build: .
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__FleetRentals: Host=postgres;Port=5432;Database=fleet_rentals;Username=fleet_rentals;Password=fleet_rentals
+    ports:
+      - "127.0.0.1:${FLEET_API_PORT:-5294}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  fleet-rentals-demo-db:
