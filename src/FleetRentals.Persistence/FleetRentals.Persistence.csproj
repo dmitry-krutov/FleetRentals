@@ -7,6 +7,10 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <PackageReference Include="Dapper" Version="2.1.66" />
+      <PackageReference Include="Npgsql" Version="9.0.4" />
+      <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.12" />
+      <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
       <ProjectReference Include="..\FleetRentals.Application\FleetRentals.Application.csproj" />
       <ProjectReference Include="..\FleetRentals.Domain\FleetRentals.Domain.csproj" />
     </ItemGroup>

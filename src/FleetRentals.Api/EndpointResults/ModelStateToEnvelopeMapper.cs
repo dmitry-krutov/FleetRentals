@@ -1,4 +1,3 @@
-using FleetRentals.Domain;
 using FleetRentals.Domain.Common;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;

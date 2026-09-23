@@ -1,20 +1,21 @@
 using System.Text.Json.Serialization;
+using FleetRentals.Domain.Common;
 
-namespace FleetRentals.Domain.Common;
+namespace FleetRentals.Api.EndpointResults;
 
 public record Envelope
 {
     public object? Result { get; }
     public ErrorList? Errors { get; }
     public bool IsError => Errors is { } && Errors.Any();
-    public DateTime TimeGenerated { get; }
+    public DateTimeOffset TimeGenerated { get; }
 
     [JsonConstructor]
     private Envelope(object? result, ErrorList? errors)
     {
         Result = result;
         Errors = errors;
-        TimeGenerated = DateTime.Now;
+        TimeGenerated = DateTimeOffset.UtcNow;
     }
 
     public static Envelope Ok(object? result = null) =>
@@ -29,14 +30,14 @@ public record Envelope<T>
     public T? Result { get; }
     public ErrorList? Errors { get; }
     public bool IsError => Errors is { } && Errors.Any();
-    public DateTime TimeGenerated { get; }
+    public DateTimeOffset TimeGenerated { get; }
 
     [JsonConstructor]
     private Envelope(T? result, ErrorList? errors)
     {
         Result = result;
         Errors = errors;
-        TimeGenerated = DateTime.Now;
+        TimeGenerated = DateTimeOffset.UtcNow;
     }
 
     public static Envelope<T> Ok(T? result = default) =>

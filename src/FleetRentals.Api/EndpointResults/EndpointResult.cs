@@ -1,11 +1,11 @@
 using CSharpFunctionalExtensions;
-using FleetRentals.Domain;
 using FleetRentals.Domain.Common;
+using Microsoft.AspNetCore.Mvc;
 using IResult = Microsoft.AspNetCore.Http.IResult;
 
 namespace FleetRentals.Api.EndpointResults;
 
-public sealed class EndpointResult<TValue> : IResult
+public sealed class EndpointResult<TValue> : IResult, IActionResult
 {
     private readonly IResult _result;
 
@@ -27,6 +27,8 @@ public sealed class EndpointResult<TValue> : IResult
 
     public Task ExecuteAsync(HttpContext httpContext) => _result.ExecuteAsync(httpContext);
 
+    public Task ExecuteResultAsync(ActionContext context) => ExecuteAsync(context.HttpContext);
+
     public static implicit operator EndpointResult<TValue>(Result<TValue, Error> result) => new(result);
 
     public static implicit operator EndpointResult<TValue>(Result<TValue, ErrorList> result) => new(result);
@@ -40,7 +42,7 @@ public sealed class EndpointResult<TValue> : IResult
     public static EndpointResult<TValue> FromErrors(ErrorList errors) => new(new ErrorsResult(errors));
 }
 
-public sealed class EndpointResult : IResult
+public sealed class EndpointResult : IResult, IActionResult
 {
     private readonly IResult _result;
 
@@ -61,6 +63,8 @@ public sealed class EndpointResult : IResult
     }
 
     public Task ExecuteAsync(HttpContext httpContext) => _result.ExecuteAsync(httpContext);
+
+    public Task ExecuteResultAsync(ActionContext context) => ExecuteAsync(context.HttpContext);
 
     public static implicit operator EndpointResult(UnitResult<Error> result) => new(result);
 

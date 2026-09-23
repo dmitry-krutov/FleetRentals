@@ -1,0 +1,9 @@
+using FleetRentals.Domain.Vehicles;
+
+namespace FleetRentals.Application.Features.Vehicles;
+
+public sealed record VehicleDto(Guid Id, string LicensePlate, string Status)
+{
+    public static VehicleDto From(Vehicle vehicle) =>
+        new(vehicle.Id.Value, vehicle.LicensePlate.Value, vehicle.Status.ToString());
+}
