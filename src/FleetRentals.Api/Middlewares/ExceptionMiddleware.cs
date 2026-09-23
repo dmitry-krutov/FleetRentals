@@ -1,3 +1,4 @@
+using FleetRentals.Api.EndpointResults;
 using FleetRentals.Domain;
 using FleetRentals.Domain.Common;
 

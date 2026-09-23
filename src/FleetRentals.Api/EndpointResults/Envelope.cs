@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
+using FleetRentals.Domain.Common;
 
-namespace FleetRentals.Domain.Common;
+namespace FleetRentals.Api.EndpointResults;
 
 public record Envelope
 {
