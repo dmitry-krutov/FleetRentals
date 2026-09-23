@@ -20,7 +20,7 @@ public static class DependencyInjection
         services.AddScoped<IVehicleRepository, VehicleRepository>();
         services.AddScoped<IDriverRepository, DriverRepository>();
         services.AddScoped<IRentalReadRepository, RentalReadRepository>();
-        services.AddScoped<IRentalStartSessionFactory, RentalStartSessionFactory>();
+        services.AddScoped<IRentalSessionFactory, RentalSessionFactory>();
 
         return services;
     }

@@ -8,16 +8,16 @@ using Npgsql;
 
 namespace FleetRentals.Persistence;
 
-public sealed class RentalStartSessionFactory(NpgsqlConnectionFactory connectionFactory) : IRentalStartSessionFactory
+public sealed class RentalSessionFactory(NpgsqlConnectionFactory connectionFactory) : IRentalSessionFactory
 {
-    public async Task<IRentalStartSession> OpenAsync(CancellationToken cancellationToken)
+    public async Task<IRentalSession> OpenAsync(CancellationToken cancellationToken)
     {
         var connection = await connectionFactory.OpenAsync(cancellationToken);
         try
         {
             var transaction = await connection.BeginTransactionAsync(
                 IsolationLevel.ReadCommitted, cancellationToken);
-            return new RentalStartSession(connection, transaction);
+            return new RentalSession(connection, transaction);
         }
         catch
         {
@@ -27,9 +27,15 @@ public sealed class RentalStartSessionFactory(NpgsqlConnectionFactory connection
     }
 }
 
-internal sealed class RentalStartSession(NpgsqlConnection connection, NpgsqlTransaction transaction) : IRentalStartSession
+internal sealed class RentalSession(NpgsqlConnection connection, NpgsqlTransaction transaction) : IRentalSession
 {
     private bool _committed;
+
+    public Task<Rental?> GetRentalAsync(RentalId id, CancellationToken cancellationToken) =>
+        LoadRentalAsync(id, forUpdate: false, cancellationToken);
+
+    public Task<Rental?> GetRentalForUpdateAsync(RentalId id, CancellationToken cancellationToken) =>
+        LoadRentalAsync(id, forUpdate: true, cancellationToken);
 
     public async Task<Vehicle?> GetVehicleForUpdateAsync(VehicleId id, CancellationToken cancellationToken)
     {
@@ -117,17 +123,39 @@ internal sealed class RentalStartSession(NpgsqlConnection connection, NpgsqlTran
         }
     }
 
-    public async Task<bool> UpdateVehicleStatusAsync(Vehicle vehicle, CancellationToken cancellationToken)
+    public async Task<bool> UpdateRentalFinishAsync(Rental rental, CancellationToken cancellationToken)
     {
         const string sql = """
-            UPDATE vehicles
-            SET status = @Status
-            WHERE id = @Id AND status = 'Available'
+            UPDATE rentals
+            SET finished_at_utc = @FinishedAtUtc
+            WHERE id = @Id AND finished_at_utc IS NULL
             """;
 
         var affected = await connection.ExecuteAsync(new CommandDefinition(
             sql,
-            new { Id = vehicle.Id.Value, Status = vehicle.Status.ToString() },
+            new { Id = rental.Id.Value, rental.FinishedAtUtc },
+            transaction,
+            cancellationToken: cancellationToken));
+        return affected == 1;
+    }
+
+    public async Task<bool> UpdateVehicleStatusAsync(
+        Vehicle vehicle, VehicleStatus expectedStatus, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            UPDATE vehicles
+            SET status = @Status
+            WHERE id = @Id AND status = @ExpectedStatus
+            """;
+
+        var affected = await connection.ExecuteAsync(new CommandDefinition(
+            sql,
+            new
+            {
+                Id = vehicle.Id.Value,
+                Status = vehicle.Status.ToString(),
+                ExpectedStatus = expectedStatus.ToString(),
+            },
             transaction,
             cancellationToken: cancellationToken));
         return affected == 1;
@@ -159,6 +187,30 @@ internal sealed class RentalStartSession(NpgsqlConnection connection, NpgsqlTran
         }
     }
 
+    private async Task<Rental?> LoadRentalAsync(
+        RentalId id, bool forUpdate, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT id AS "Id", vehicle_id AS "VehicleId", driver_id AS "DriverId",
+                   started_at_utc AS "StartedAtUtc", finished_at_utc AS "FinishedAtUtc"
+            FROM rentals
+            WHERE id = @Id
+            """;
+
+        var commandText = forUpdate ? sql + "\nFOR UPDATE" : sql;
+        var row = await connection.QuerySingleOrDefaultAsync<RentalRow>(new CommandDefinition(
+            commandText, new { Id = id.Value }, transaction, cancellationToken: cancellationToken));
+
+        return row is null
+            ? null
+            : Rental.Restore(
+                RentalId.Create(row.Id).Value,
+                VehicleId.Create(row.VehicleId).Value,
+                DriverId.Create(row.DriverId).Value,
+                row.StartedAtUtc,
+                row.FinishedAtUtc).Value;
+    }
+
     private sealed class VehicleRow
     {
         public Guid Id { get; set; }
@@ -173,5 +225,18 @@ internal sealed class RentalStartSession(NpgsqlConnection connection, NpgsqlTran
         public Guid Id { get; set; }
 
         public string Name { get; set; } = string.Empty;
+    }
+
+    private sealed class RentalRow
+    {
+        public Guid Id { get; set; }
+
+        public Guid VehicleId { get; set; }
+
+        public Guid DriverId { get; set; }
+
+        public DateTimeOffset StartedAtUtc { get; set; }
+
+        public DateTimeOffset? FinishedAtUtc { get; set; }
     }
 }

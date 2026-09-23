@@ -4,13 +4,17 @@ using FleetRentals.Domain.Vehicles;
 
 namespace FleetRentals.Application.Features.Rentals;
 
-public interface IRentalStartSessionFactory
+public interface IRentalSessionFactory
 {
-    Task<IRentalStartSession> OpenAsync(CancellationToken cancellationToken);
+    Task<IRentalSession> OpenAsync(CancellationToken cancellationToken);
 }
 
-public interface IRentalStartSession : IAsyncDisposable
+public interface IRentalSession : IAsyncDisposable
 {
+    Task<Rental?> GetRentalAsync(RentalId id, CancellationToken cancellationToken);
+
+    Task<Rental?> GetRentalForUpdateAsync(RentalId id, CancellationToken cancellationToken);
+
     Task<Vehicle?> GetVehicleForUpdateAsync(VehicleId id, CancellationToken cancellationToken);
 
     Task<Driver?> GetDriverForUpdateAsync(DriverId id, CancellationToken cancellationToken);
@@ -19,7 +23,10 @@ public interface IRentalStartSession : IAsyncDisposable
 
     Task<RentalInsertOutcome> TryInsertAsync(Rental rental, CancellationToken cancellationToken);
 
-    Task<bool> UpdateVehicleStatusAsync(Vehicle vehicle, CancellationToken cancellationToken);
+    Task<bool> UpdateRentalFinishAsync(Rental rental, CancellationToken cancellationToken);
+
+    Task<bool> UpdateVehicleStatusAsync(
+        Vehicle vehicle, VehicleStatus expectedStatus, CancellationToken cancellationToken);
 
     Task CommitAsync(CancellationToken cancellationToken);
 }

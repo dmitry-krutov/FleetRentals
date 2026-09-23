@@ -38,6 +38,19 @@ public sealed class RentalsController : ApplicationController
         return await handler.HandleAsync(new GetRentalQuery(id), cancellationToken);
     }
 
+    [HttpPost("{id}/finish")]
+    [ProducesResponseType(typeof(Envelope<RentalDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(Envelope), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(Envelope), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(Envelope), StatusCodes.Status409Conflict)]
+    public async Task<EndpointResult<RentalDto>> Finish(
+        [FromRoute] Guid id,
+        [FromServices] FinishRentalCommandHandler handler,
+        CancellationToken cancellationToken)
+    {
+        return await handler.HandleAsync(new FinishRentalCommand(id), cancellationToken);
+    }
+
     [HttpGet("/vehicles/{vehicleId}/active-rental")]
     [ProducesResponseType(typeof(Envelope<RentalDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(Envelope), StatusCodes.Status400BadRequest)]

@@ -1,6 +1,6 @@
 # Fleet rentals API
 
-The API is built with .NET 10, PostgreSQL, and Dapper. The current slices implement vehicle and driver registration and lookup, plus rental start and lookup. Rental finish follows in the next slice. HTTP routes use ASP.NET Core controllers. Each Application use case keeps its request and handler in one file under `Features/<feature>`.
+The API is built with .NET 10, PostgreSQL, and Dapper. It implements vehicle and driver registration and lookup, plus rental start, finish, and lookup. HTTP routes use ASP.NET Core controllers. Each Application use case keeps its request and handler in one file under `Features/<feature>`.
 
 ## Run locally
 
@@ -50,9 +50,10 @@ Names are trimmed, must not be blank, and may contain at most 200 characters. In
 | --- | --- | --- | --- |
 | POST | `/rentals` | `{"vehicleId":"<guid>","driverId":"<guid>"}` | 201, active rental and `Location` header |
 | GET | `/rentals/{id}` | — | 200, rental |
+| POST | `/rentals/{id}/finish` | — | 200, finished rental |
 | GET | `/vehicles/{id}/active-rental` | — | 200, current rental for the vehicle |
 
-Starting a rental returns 400 for invalid identifiers, 404 when the vehicle or driver does not exist, and 409 if either already has an active rental. The vehicle status becomes `Rented` in the same database transaction. The active rental response identifies the driver; use `GET /drivers/{id}` to retrieve the driver's name. Only rental finish can make the vehicle available again, and it is implemented in the next slice.
+Starting a rental returns 400 for invalid identifiers, 404 when the vehicle or driver does not exist, and 409 if either already has an active rental. The vehicle status becomes `Rented` in the same database transaction. The active rental response identifies the driver; use `GET /drivers/{id}` to retrieve the driver's name. Finishing a rental records the return time and makes the vehicle `Available` in one transaction. An already finished rental returns 409; a missing rental returns 404. The vehicle and driver can be used in a new rental after the finish succeeds.
 
 ## Tests
 

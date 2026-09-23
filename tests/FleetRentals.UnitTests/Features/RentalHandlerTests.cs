@@ -98,6 +98,108 @@ public sealed class RentalHandlerTests
         Assert.False(session.Committed);
     }
 
+    [Fact]
+    public async Task Finish_rejects_empty_and_missing_rental_ids()
+    {
+        var session = new FakeSession();
+        var factory = new FakeSessionFactory(session);
+        var handler = new FinishRentalCommandHandler(factory, new FixedTimeProvider(StartedAt));
+
+        var invalid = await handler.HandleAsync(new FinishRentalCommand(Guid.Empty), default);
+        var missing = await handler.HandleAsync(new FinishRentalCommand(Guid.NewGuid()), default);
+
+        Assert.Equal("rental.id.invalid", invalid.Error.Code);
+        Assert.Equal("rental.not_found", missing.Error.Code);
+        Assert.Equal(1, factory.OpenCalls);
+        Assert.False(session.Committed);
+    }
+
+    [Fact]
+    public async Task Finish_uses_supplied_clock_and_makes_vehicle_available()
+    {
+        var vehicle = NewVehicle();
+        Assert.True(vehicle.MarkRented().IsSuccess);
+        var driver = NewDriver();
+        var rental = Rental.Start(RentalId.NewId(), vehicle.Id, driver.Id, StartedAt);
+        var session = new FakeSession { Vehicle = vehicle, Driver = driver, ExistingRental = rental };
+        var finishedAt = StartedAt.AddHours(1);
+
+        var result = await new FinishRentalCommandHandler(
+            new FakeSessionFactory(session), new FixedTimeProvider(finishedAt))
+            .HandleAsync(new FinishRentalCommand(rental.Id.Value), default);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("Finished", result.Value.Status);
+        Assert.Equal(finishedAt, result.Value.FinishedAtUtc);
+        Assert.Equal(VehicleStatus.Available, vehicle.Status);
+        Assert.Equal(VehicleStatus.Rented, session.PreviousVehicleStatus);
+        Assert.True(session.Committed);
+    }
+
+    [Fact]
+    public async Task Repeated_finish_keeps_original_time_and_vehicle_state()
+    {
+        var vehicle = NewVehicle();
+        var driver = NewDriver();
+        var rental = Rental.Start(RentalId.NewId(), vehicle.Id, driver.Id, StartedAt);
+        var originalFinish = StartedAt.AddMinutes(30);
+        Assert.True(rental.Finish(originalFinish).IsSuccess);
+        var session = new FakeSession { Vehicle = vehicle, Driver = driver, ExistingRental = rental };
+
+        var result = await new FinishRentalCommandHandler(
+            new FakeSessionFactory(session), new FixedTimeProvider(originalFinish.AddMinutes(30)))
+            .HandleAsync(new FinishRentalCommand(rental.Id.Value), default);
+
+        Assert.Equal("rental.already_finished", result.Error.Code);
+        Assert.Equal(originalFinish, rental.FinishedAtUtc);
+        Assert.Equal(VehicleStatus.Available, vehicle.Status);
+        Assert.False(session.Committed);
+    }
+
+    [Fact]
+    public async Task Finish_before_start_rolls_back_without_changing_vehicle()
+    {
+        var vehicle = NewVehicle();
+        Assert.True(vehicle.MarkRented().IsSuccess);
+        var driver = NewDriver();
+        var rental = Rental.Start(RentalId.NewId(), vehicle.Id, driver.Id, StartedAt);
+        var session = new FakeSession { Vehicle = vehicle, Driver = driver, ExistingRental = rental };
+
+        var result = await new FinishRentalCommandHandler(
+            new FakeSessionFactory(session), new FixedTimeProvider(StartedAt.AddSeconds(-1)))
+            .HandleAsync(new FinishRentalCommand(rental.Id.Value), default);
+
+        Assert.Equal("rental.finish_before_start", result.Error.Code);
+        Assert.Null(rental.FinishedAtUtc);
+        Assert.Equal(VehicleStatus.Rented, vehicle.Status);
+        Assert.False(session.Committed);
+    }
+
+    [Fact]
+    public async Task Finish_detects_rental_completed_while_waiting_for_locks()
+    {
+        var vehicle = NewVehicle();
+        Assert.True(vehicle.MarkRented().IsSuccess);
+        var driver = NewDriver();
+        var active = Rental.Start(RentalId.NewId(), vehicle.Id, driver.Id, StartedAt);
+        var finished = Rental.Restore(
+            active.Id, vehicle.Id, driver.Id, StartedAt, StartedAt.AddMinutes(30)).Value;
+        var session = new FakeSession
+        {
+            Vehicle = vehicle,
+            Driver = driver,
+            ExistingRental = active,
+            LockedRental = finished,
+        };
+
+        var result = await new FinishRentalCommandHandler(
+            new FakeSessionFactory(session), new FixedTimeProvider(StartedAt.AddHours(1)))
+            .HandleAsync(new FinishRentalCommand(active.Id.Value), default);
+
+        Assert.Equal("rental.already_finished", result.Error.Code);
+        Assert.False(session.Committed);
+    }
+
     private static Vehicle NewVehicle() =>
         Vehicle.Register(VehicleId.NewId(), LicensePlate.Create("AB-123").Value);
 
@@ -109,19 +211,23 @@ public sealed class RentalHandlerTests
         public override DateTimeOffset GetUtcNow() => utcNow;
     }
 
-    private sealed class FakeSessionFactory(FakeSession session) : IRentalStartSessionFactory
+    private sealed class FakeSessionFactory(FakeSession session) : IRentalSessionFactory
     {
         public int OpenCalls { get; private set; }
 
-        public Task<IRentalStartSession> OpenAsync(CancellationToken cancellationToken)
+        public Task<IRentalSession> OpenAsync(CancellationToken cancellationToken)
         {
             OpenCalls++;
-            return Task.FromResult<IRentalStartSession>(session);
+            return Task.FromResult<IRentalSession>(session);
         }
     }
 
-    private sealed class FakeSession : IRentalStartSession
+    private sealed class FakeSession : IRentalSession
     {
+        public Rental? ExistingRental { get; init; }
+
+        public Rental? LockedRental { get; init; }
+
         public Vehicle? Vehicle { get; init; }
 
         public Driver? Driver { get; init; }
@@ -133,6 +239,14 @@ public sealed class RentalHandlerTests
         public Rental? InsertedRental { get; private set; }
 
         public bool Committed { get; private set; }
+
+        public VehicleStatus? PreviousVehicleStatus { get; private set; }
+
+        public Task<Rental?> GetRentalAsync(RentalId id, CancellationToken cancellationToken) =>
+            Task.FromResult(ExistingRental?.Id == id ? ExistingRental : null);
+
+        public Task<Rental?> GetRentalForUpdateAsync(RentalId id, CancellationToken cancellationToken) =>
+            Task.FromResult((LockedRental ?? ExistingRental)?.Id == id ? LockedRental ?? ExistingRental : null);
 
         public Task<Vehicle?> GetVehicleForUpdateAsync(VehicleId id, CancellationToken cancellationToken) =>
             Task.FromResult(Vehicle?.Id == id ? Vehicle : null);
@@ -149,8 +263,15 @@ public sealed class RentalHandlerTests
             return Task.FromResult(InsertOutcome);
         }
 
-        public Task<bool> UpdateVehicleStatusAsync(Vehicle vehicle, CancellationToken cancellationToken) =>
+        public Task<bool> UpdateRentalFinishAsync(Rental rental, CancellationToken cancellationToken) =>
             Task.FromResult(true);
+
+        public Task<bool> UpdateVehicleStatusAsync(
+            Vehicle vehicle, VehicleStatus expectedStatus, CancellationToken cancellationToken)
+        {
+            PreviousVehicleStatus = expectedStatus;
+            return Task.FromResult(true);
+        }
 
         public Task CommitAsync(CancellationToken cancellationToken)
         {

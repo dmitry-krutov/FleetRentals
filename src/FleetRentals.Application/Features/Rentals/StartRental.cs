@@ -9,7 +9,7 @@ namespace FleetRentals.Application.Features.Rentals;
 public sealed record StartRentalCommand(Guid VehicleId, Guid DriverId);
 
 public sealed class StartRentalCommandHandler(
-    IRentalStartSessionFactory sessionFactory,
+    IRentalSessionFactory sessionFactory,
     TimeProvider timeProvider)
 {
     public async Task<Result<RentalDto, Error>> HandleAsync(
@@ -46,7 +46,8 @@ public sealed class StartRentalCommandHandler(
         if (insertOutcome == RentalInsertOutcome.DriverAlreadyRented)
             return Error.Conflict("rental.driver.busy", "Driver already has an active rental.");
 
-        if (!await session.UpdateVehicleStatusAsync(vehicle, cancellationToken))
+        if (!await session.UpdateVehicleStatusAsync(
+                vehicle, VehicleStatus.Available, cancellationToken))
             return Error.Conflict("vehicle.already_rented", "Vehicle already has an active rental.");
 
         await session.CommitAsync(cancellationToken);
