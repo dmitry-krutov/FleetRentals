@@ -50,17 +50,4 @@ public sealed class RentalsController : ApplicationController
     {
         return await handler.HandleAsync(new FinishRentalCommand(id), cancellationToken);
     }
-
-    [HttpGet("/vehicles/{vehicleId}/active-rental")]
-    [ProducesResponseType(typeof(Envelope<RentalDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(Envelope), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(Envelope), StatusCodes.Status404NotFound)]
-    public async Task<EndpointResult<RentalDto>> GetActiveByVehicle(
-        [FromRoute] Guid vehicleId,
-        [FromServices] GetActiveRentalByVehicleQueryHandler handler,
-        CancellationToken cancellationToken)
-    {
-        return await handler.HandleAsync(
-            new GetActiveRentalByVehicleQuery(vehicleId), cancellationToken);
-    }
 }

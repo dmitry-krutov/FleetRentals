@@ -11,8 +11,6 @@ public class ErrorList : IEnumerable<Error>
         _errors = [..errors];
     }
 
-    public static implicit operator ErrorList(List<Error> errors) => new(errors);
-
     public static implicit operator ErrorList(Error error)
         => new([error]);
 

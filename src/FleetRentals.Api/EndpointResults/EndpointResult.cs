@@ -1,5 +1,4 @@
 using CSharpFunctionalExtensions;
-using FleetRentals.Domain;
 using FleetRentals.Domain.Common;
 using Microsoft.AspNetCore.Mvc;
 using IResult = Microsoft.AspNetCore.Http.IResult;

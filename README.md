@@ -10,7 +10,7 @@ Start PostgreSQL:
 docker compose -f compose.infra.yml up -d --wait
 ```
 
-Apply the current schema to a fresh database, or rerun it to add the new `rentals` table and indexes to a database created in earlier slices:
+Apply the schema to the database:
 
 ```bash
 docker compose -f compose.infra.yml exec -T postgres psql -U fleet_rentals -d fleet_rentals < schema.sql

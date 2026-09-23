@@ -1,4 +1,5 @@
 using FleetRentals.Api.EndpointResults;
+using FleetRentals.Application.Features.Rentals;
 using FleetRentals.Application.Features.Vehicles;
 using Microsoft.AspNetCore.Mvc;
 
@@ -35,5 +36,17 @@ public sealed class VehiclesController : ApplicationController
         CancellationToken cancellationToken)
     {
         return await handler.HandleAsync(new GetVehicleQuery(id), cancellationToken);
+    }
+
+    [HttpGet("{id}/active-rental")]
+    [ProducesResponseType(typeof(Envelope<RentalDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(Envelope), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(Envelope), StatusCodes.Status404NotFound)]
+    public async Task<EndpointResult<RentalDto>> GetActiveRental(
+        [FromRoute] Guid id,
+        [FromServices] GetActiveRentalByVehicleQueryHandler handler,
+        CancellationToken cancellationToken)
+    {
+        return await handler.HandleAsync(new GetActiveRentalByVehicleQuery(id), cancellationToken);
     }
 }
