@@ -1,6 +1,6 @@
 # Fleet rentals API
 
-The API is built with .NET 10, PostgreSQL, and Dapper. It implements vehicle and driver registration and lookup, plus rental start, finish, and lookup. HTTP routes use ASP.NET Core controllers. Each Application use case keeps its request and handler in one file under `Features/<feature>`.
+The API is built with .NET 10, PostgreSQL, and Dapper. It implements vehicle and driver registration and lookup, plus rental start, finish, and lookup. ASP.NET Core controllers send commands and queries through MediatR, which runs FluentValidation before each handler. Each Application use case keeps its request and handler in one file under `Features/<feature>`.
 
 ## Quick start with Docker
 
@@ -43,7 +43,13 @@ dotnet run --project src/FleetRentals.Api --launch-profile http
 
 Open [Swagger UI](http://localhost:5294/swagger) to call the API. The development connection string in `src/FleetRentals.Api/appsettings.Development.json` points to the infrastructure Compose database. Override it with `ConnectionStrings__FleetRentals` for another PostgreSQL instance. The infrastructure and demo Compose stacks use separate database volumes; only `compose.infra.yml` exposes PostgreSQL on host port 21016.
 
-For future schema changes to an existing database, add an explicit migration or `ALTER` script; `CREATE TABLE IF NOT EXISTS` does not update existing tables.
+If the database was created with the previous schema, remove the obsolete vehicle status column before running this version:
+
+```bash
+docker compose -f compose.infra.yml exec -T postgres psql -U fleet_rentals -d fleet_rentals < migrations/001_drop_vehicle_status.sql
+```
+
+For the full demo stack, use `docker compose exec -T postgres ...` with the same `psql` arguments. `schema.sql` only initializes a new database volume; it does not migrate an existing one.
 
 ## Vehicle endpoints
 
@@ -52,7 +58,7 @@ For future schema changes to an existing database, add an explicit migration or 
 | POST | `/vehicles` | `{"licensePlate":"AB-123"}` | 201, vehicle and `Location` header |
 | GET | `/vehicles/{id}` | — | 200, vehicle |
 
-The response envelope contains `result` on success or `errors` on failure. Invalid input returns 400, a missing vehicle returns 404, and a duplicate license plate returns 409. Plates are trimmed and normalized to uppercase. A vehicle starts as `Available` and becomes `Rented` when a rental starts.
+The response envelope contains `result` on success or `errors` on failure. Invalid input returns 400, a missing vehicle returns 404, and a duplicate license plate returns 409. Plates are trimmed and normalized to uppercase. The response status is `Rented` when the vehicle has an active rental and `Available` otherwise; it is not stored on the vehicle row.
 
 ## Driver endpoints
 
@@ -72,7 +78,7 @@ Names are trimmed, must not be blank, and may contain at most 200 characters. In
 | POST | `/rentals/{id}/finish` | — | 200, finished rental |
 | GET | `/vehicles/{id}/active-rental` | — | 200, current rental for the vehicle |
 
-Starting a rental returns 400 for invalid identifiers, 404 when the vehicle or driver does not exist, and 409 if either already has an active rental. The vehicle status becomes `Rented` in the same database transaction. The active rental response identifies the driver; use `GET /drivers/{id}` to retrieve the driver's name. Finishing a rental records the return time and makes the vehicle `Available` in one transaction. An already finished rental returns 409; a missing rental returns 404. The vehicle and driver can be used in a new rental after the finish succeeds.
+Starting a rental returns 400 for invalid identifiers, 404 when the vehicle or driver does not exist, and 409 if either already has an active rental. The active rental response identifies the driver; use `GET /drivers/{id}` to retrieve the driver's name. Finishing a rental records the return time with a conditional update. An already finished rental returns 409; a missing rental returns 404. The vehicle and driver can be used in a new rental after the finish succeeds. PostgreSQL partial unique indexes enforce one active rental per vehicle and driver even for concurrent requests.
 
 ## Tests
 

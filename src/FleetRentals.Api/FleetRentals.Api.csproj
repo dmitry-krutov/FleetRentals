@@ -12,7 +12,6 @@
 
     <ItemGroup>
       <ProjectReference Include="..\FleetRentals.Application\FleetRentals.Application.csproj" />
-      <ProjectReference Include="..\FleetRentals.Domain\FleetRentals.Domain.csproj" />
       <ProjectReference Include="..\FleetRentals.Persistence\FleetRentals.Persistence.csproj" />
     </ItemGroup>
 

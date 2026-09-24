@@ -1,5 +1,7 @@
 using FleetRentals.Application.Features.Drivers;
+using FleetRentals.Application.Features.Drivers.Common;
 using FleetRentals.Domain.Drivers;
+using FluentValidation;
 using Xunit;
 
 namespace FleetRentals.UnitTests.Features;
@@ -12,11 +14,10 @@ public sealed class DriverHandlerTests
     public async Task Registration_rejects_blank_name_without_writing(string? name, string errorCode)
     {
         var repository = new FakeDriverRepository();
-        var result = await new RegisterDriverCommandHandler(repository)
-            .HandleAsync(new RegisterDriverCommand(name), default);
-
-        Assert.True(result.IsFailure);
-        Assert.Equal(errorCode, result.Error.Code);
+        var validator = new RegisterDriverValidator();
+        var exception = await Assert.ThrowsAsync<ValidationException>(() =>
+            validator.ValidateAndThrowAsync(new RegisterDriverCommand(name)));
+        Assert.Contains(exception.Errors, error => error.ErrorCode == errorCode);
         Assert.Equal(0, repository.AddCalls);
     }
 
@@ -24,11 +25,10 @@ public sealed class DriverHandlerTests
     public async Task Registration_rejects_too_long_name_without_writing()
     {
         var repository = new FakeDriverRepository();
-        var result = await new RegisterDriverCommandHandler(repository)
-            .HandleAsync(new RegisterDriverCommand(new string('A', DriverName.MaxLength + 1)), default);
-
-        Assert.True(result.IsFailure);
-        Assert.Equal("driver.name.too_long", result.Error.Code);
+        var validator = new RegisterDriverValidator();
+        var exception = await Assert.ThrowsAsync<ValidationException>(() =>
+            validator.ValidateAndThrowAsync(new RegisterDriverCommand(new string('A', 201))));
+        Assert.Contains(exception.Errors, error => error.ErrorCode == "driver.name.too_long");
         Assert.Equal(0, repository.AddCalls);
     }
 
@@ -37,11 +37,11 @@ public sealed class DriverHandlerTests
     {
         var repository = new FakeDriverRepository();
         var registered = await new RegisterDriverCommandHandler(repository)
-            .HandleAsync(new RegisterDriverCommand("  Alex Driver  "), default);
+            .Handle(new RegisterDriverCommand("  Alex Driver  "), default);
 
         Assert.True(registered.IsSuccess);
         var loaded = await new GetDriverQueryHandler(repository)
-            .HandleAsync(new GetDriverQuery(registered.Value.Id), default);
+            .Handle(new GetDriverQuery(registered.Value.Id), default);
 
         Assert.True(loaded.IsSuccess);
         Assert.Equal("Alex Driver", loaded.Value.Name);
@@ -54,10 +54,12 @@ public sealed class DriverHandlerTests
         var repository = new FakeDriverRepository();
         var handler = new GetDriverQueryHandler(repository);
 
-        var empty = await handler.HandleAsync(new GetDriverQuery(Guid.Empty), default);
-        var missing = await handler.HandleAsync(new GetDriverQuery(Guid.NewGuid()), default);
+        var validator = new GetDriverValidator();
+        var exception = await Assert.ThrowsAsync<ValidationException>(() =>
+            validator.ValidateAndThrowAsync(new GetDriverQuery(Guid.Empty)));
+        var missing = await handler.Handle(new GetDriverQuery(Guid.NewGuid()), default);
 
-        Assert.Equal("driver.id.invalid", empty.Error.Code);
+        Assert.Contains(exception.Errors, error => error.ErrorCode == "driver.id.invalid");
         Assert.Equal("driver.not_found", missing.Error.Code);
         Assert.Equal(1, repository.GetCalls);
     }
@@ -77,7 +79,7 @@ public sealed class DriverHandlerTests
             return Task.CompletedTask;
         }
 
-        public Task<Driver?> GetByIdAsync(DriverId id, CancellationToken cancellationToken)
+        public Task<Driver?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
         {
             GetCalls++;
             return Task.FromResult(LastAdded?.Id == id ? LastAdded : null);

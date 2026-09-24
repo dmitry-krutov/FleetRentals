@@ -1,9 +1,9 @@
 using Dapper;
-using FleetRentals.Application.Features.Vehicles;
+using FleetRentals.Application.Features.Vehicles.Common;
 using FleetRentals.Domain.Vehicles;
 using Npgsql;
 
-namespace FleetRentals.Persistence;
+namespace FleetRentals.Persistence.Repositories;
 
 public sealed class VehicleRepository(NpgsqlConnectionFactory connectionFactory) : IVehicleRepository
 {
@@ -11,15 +11,15 @@ public sealed class VehicleRepository(NpgsqlConnectionFactory connectionFactory)
     {
         await using var connection = await connectionFactory.OpenAsync(cancellationToken);
         const string sql = """
-            INSERT INTO vehicles (id, license_plate, status)
-            VALUES (@Id, @LicensePlate, @Status)
+            INSERT INTO vehicles (id, license_plate)
+            VALUES (@Id, @LicensePlate)
             """;
 
         try
         {
             await connection.ExecuteAsync(new CommandDefinition(
                 sql,
-                new { Id = vehicle.Id.Value, LicensePlate = vehicle.LicensePlate.Value, Status = vehicle.Status.ToString() },
+                new { Id = vehicle.Id, LicensePlate = vehicle.LicensePlate },
                 cancellationToken: cancellationToken));
             return true;
         }
@@ -31,24 +31,28 @@ public sealed class VehicleRepository(NpgsqlConnectionFactory connectionFactory)
         }
     }
 
-    public async Task<Vehicle?> GetByIdAsync(VehicleId id, CancellationToken cancellationToken)
+    public async Task<Vehicle?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
     {
         await using var connection = await connectionFactory.OpenAsync(cancellationToken);
         const string sql = """
-            SELECT id AS "Id", license_plate AS "LicensePlate", status AS "Status"
-            FROM vehicles
-            WHERE id = @Id
+            SELECT v.id AS "Id", v.license_plate AS "LicensePlate",
+                   EXISTS (
+                       SELECT 1 FROM rentals r
+                       WHERE r.vehicle_id = v.id AND r.finished_at_utc IS NULL
+                   ) AS "IsRented"
+            FROM vehicles v
+            WHERE v.id = @Id
             """;
         var row = await connection.QuerySingleOrDefaultAsync<VehicleRow>(
-            new CommandDefinition(sql, new { Id = id.Value }, cancellationToken: cancellationToken));
+            new CommandDefinition(sql, new { Id = id }, cancellationToken: cancellationToken));
 
         if (row is null)
             return null;
 
-        return Vehicle.Restore(
-            VehicleId.Create(row.Id).Value,
-            LicensePlate.Create(row.LicensePlate).Value,
-            Enum.Parse<VehicleStatus>(row.Status)).Value;
+        return new Vehicle(
+            row.Id,
+            row.LicensePlate,
+            row.IsRented ? VehicleStatus.Rented : VehicleStatus.Available);
     }
 
     private sealed class VehicleRow
@@ -57,6 +61,6 @@ public sealed class VehicleRepository(NpgsqlConnectionFactory connectionFactory)
 
         public string LicensePlate { get; set; } = string.Empty;
 
-        public string Status { get; set; } = string.Empty;
+        public bool IsRented { get; set; }
     }
 }

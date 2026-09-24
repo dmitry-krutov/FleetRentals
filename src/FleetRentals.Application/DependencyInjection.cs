@@ -1,5 +1,7 @@
+using FleetRentals.Application.Common;
+using FluentValidation;
+using MediatR;
 using Microsoft.Extensions.DependencyInjection;
-using Scrutor;
 
 namespace FleetRentals.Application;
 
@@ -9,15 +11,11 @@ public static class DependencyInjection
     {
         services.AddSingleton(TimeProvider.System);
 
-        services.Scan(scan => scan
-            .FromAssemblies(typeof(DependencyInjection).Assembly)
-            .AddClasses(classes => classes.Where(type =>
-                type.Namespace?.StartsWith("FleetRentals.Application.Features.", StringComparison.Ordinal) == true &&
-                (type.Name.EndsWith("CommandHandler", StringComparison.Ordinal) ||
-                 type.Name.EndsWith("QueryHandler", StringComparison.Ordinal))))
-            .UsingRegistrationStrategy(RegistrationStrategy.Skip)
-            .AsSelf()
-            .WithScopedLifetime());
+        var assembly = typeof(DependencyInjection).Assembly;
+        services.AddValidatorsFromAssembly(assembly);
+
+        services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(assembly));
+        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
 
         return services;
     }

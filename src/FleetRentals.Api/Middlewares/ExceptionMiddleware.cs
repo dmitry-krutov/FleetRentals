@@ -1,48 +1,38 @@
-using FleetRentals.Api.EndpointResults;
-using FleetRentals.Domain.Common;
+using FleetRentals.Application.Common;
+using FluentValidation;
 
 namespace FleetRentals.Api.Middlewares;
 
-public class ExceptionMiddleware
+public sealed class ExceptionMiddleware(RequestDelegate next, ILogger<ExceptionMiddleware> logger)
 {
-    private readonly RequestDelegate _next;
-    private readonly ILogger<ExceptionMiddleware> _logger;
-
-    public ExceptionMiddleware(RequestDelegate next, ILogger<ExceptionMiddleware> logger)
-    {
-        _next = next;
-        _logger = logger;
-    }
-
     public async Task InvokeAsync(HttpContext context)
     {
         try
         {
-            await _next(context);
+            await next(context);
         }
-        catch (Exception ex)
+        catch (ValidationException exception)
         {
-            await HandleExceptionAsync(context, ex);
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            var errors = exception.Errors.Select(failure => Error.Validation(
+                failure.ErrorCode,
+                failure.ErrorMessage,
+                failure.PropertyName));
+            await context.Response.WriteAsJsonAsync(Envelope.Failure(errors));
         }
-    }
-
-    private async Task HandleExceptionAsync(HttpContext context, Exception exception)
-    {
-        _logger.LogError(exception, "Unhandled exception while processing the request.");
-
-        var envelope = Envelope.Error(Error.Internal(
-            "server.internal", "An unexpected server error occurred."));
-        context.Response.ContentType = "application/json";
-        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
-
-        await context.Response.WriteAsJsonAsync(envelope);
+        catch (Exception exception)
+        {
+            logger.LogError(exception, "Unhandled exception while processing the request.");
+            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            await context.Response.WriteAsJsonAsync(Envelope.Failure([
+                Error.Internal("server.internal", "An unexpected server error occurred."),
+            ]));
+        }
     }
 }
 
 public static class ExceptionMiddlewareExtensions
 {
-    public static IApplicationBuilder UseExceptionMiddleware(this IApplicationBuilder builder)
-    {
-        return builder.UseMiddleware<ExceptionMiddleware>();
-    }
+    public static IApplicationBuilder UseExceptionMiddleware(this IApplicationBuilder builder) =>
+        builder.UseMiddleware<ExceptionMiddleware>();
 }

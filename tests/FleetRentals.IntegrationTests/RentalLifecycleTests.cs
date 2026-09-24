@@ -1,14 +1,37 @@
 using FleetRentals.Application.Features.Drivers;
 using FleetRentals.Application.Features.Rentals;
+using FleetRentals.Application.Features.Rentals.Common;
 using FleetRentals.Application.Features.Vehicles;
+using FleetRentals.Application.Features.Vehicles.Common;
 using FleetRentals.Domain.Vehicles;
 using FleetRentals.Persistence;
+using FleetRentals.Persistence.Repositories;
 using Xunit;
 
 namespace FleetRentals.IntegrationTests;
 
 public sealed class RentalLifecycleTests
 {
+    [Fact]
+    public async Task Start_reports_missing_vehicle_and_driver_from_foreign_keys()
+    {
+        await using var database = await IsolatedDatabase.CreateAsync();
+        var vehicleId = await RegisterVehicleAsync(database, "AB-123");
+        var driverId = await RegisterDriverAsync(database, "Alex Driver");
+        var handler = CreateStartHandler(database);
+
+        var missingVehicle = await handler.Handle(
+            new StartRentalCommand(Guid.NewGuid(), driverId), default);
+        var missingDriver = await handler.Handle(
+            new StartRentalCommand(vehicleId, Guid.NewGuid()), default);
+
+        Assert.Equal("vehicle.not_found", missingVehicle.Error.Code);
+        Assert.Equal("driver.not_found", missingDriver.Error.Code);
+        Assert.Null(await new RentalRepository(new NpgsqlConnectionFactory(database.DataSource))
+            .GetActiveByVehicleIdAsync(vehicleId, default));
+        Assert.Equal("Available", (await GetVehicleAsync(database, vehicleId)).Status);
+    }
+
     [Fact]
     public async Task Start_creates_active_rental_and_marks_vehicle_rented()
     {
@@ -17,7 +40,7 @@ public sealed class RentalLifecycleTests
         var driverId = await RegisterDriverAsync(database, "Alex Driver");
         var handler = CreateStartHandler(database);
 
-        var result = await handler.HandleAsync(new StartRentalCommand(vehicleId, driverId), default);
+        var result = await handler.Handle(new StartRentalCommand(vehicleId, driverId), default);
 
         Assert.True(result.IsSuccess);
         Assert.Equal("Active", result.Value.Status);
@@ -25,11 +48,11 @@ public sealed class RentalLifecycleTests
         Assert.Equal(driverId, result.Value.DriverId);
         Assert.Equal(TimeSpan.Zero, result.Value.StartedAtUtc.Offset);
 
-        var readRepository = new RentalReadRepository(new NpgsqlConnectionFactory(database.DataSource));
-        var loaded = await new GetRentalQueryHandler(readRepository)
-            .HandleAsync(new GetRentalQuery(result.Value.Id), default);
-        var current = await CreateActiveQueryHandler(database, readRepository)
-            .HandleAsync(new GetActiveRentalByVehicleQuery(vehicleId), default);
+        var rentalRepository = new RentalRepository(new NpgsqlConnectionFactory(database.DataSource));
+        var loaded = await new GetRentalQueryHandler(rentalRepository)
+            .Handle(new GetRentalQuery(result.Value.Id), default);
+        var current = await CreateActiveQueryHandler(database, rentalRepository)
+            .Handle(new GetActiveRentalByVehicleQuery(vehicleId), default);
 
         Assert.True(loaded.IsSuccess);
         Assert.Equal(result.Value.Id, loaded.Value.Id);
@@ -47,14 +70,14 @@ public sealed class RentalLifecycleTests
         var secondDriverId = await RegisterDriverAsync(database, "Sam Driver");
         var handler = CreateStartHandler(database);
 
-        var first = await handler.HandleAsync(new StartRentalCommand(vehicleId, firstDriverId), default);
-        var second = await handler.HandleAsync(new StartRentalCommand(vehicleId, secondDriverId), default);
+        var first = await handler.Handle(new StartRentalCommand(vehicleId, firstDriverId), default);
+        var second = await handler.Handle(new StartRentalCommand(vehicleId, secondDriverId), default);
 
         Assert.True(first.IsSuccess);
         Assert.Equal("vehicle.already_rented", second.Error.Code);
-        var active = await new RentalReadRepository(new NpgsqlConnectionFactory(database.DataSource))
-            .GetActiveByVehicleIdAsync(VehicleId.Create(vehicleId).Value, default);
-        Assert.Equal(first.Value.Id, active?.Id.Value);
+        var active = await new RentalRepository(new NpgsqlConnectionFactory(database.DataSource))
+            .GetActiveByVehicleIdAsync(vehicleId, default);
+        Assert.Equal(first.Value.Id, active?.Id);
         Assert.Equal("Rented", (await GetVehicleAsync(database, vehicleId)).Status);
     }
 
@@ -67,16 +90,16 @@ public sealed class RentalLifecycleTests
         var driverId = await RegisterDriverAsync(database, "Alex Driver");
         var handler = CreateStartHandler(database);
 
-        var first = await handler.HandleAsync(new StartRentalCommand(firstVehicleId, driverId), default);
-        var second = await handler.HandleAsync(new StartRentalCommand(secondVehicleId, driverId), default);
+        var first = await handler.Handle(new StartRentalCommand(firstVehicleId, driverId), default);
+        var second = await handler.Handle(new StartRentalCommand(secondVehicleId, driverId), default);
 
         Assert.True(first.IsSuccess);
         Assert.Equal("rental.driver.busy", second.Error.Code);
         Assert.Equal("Rented", (await GetVehicleAsync(database, firstVehicleId)).Status);
         Assert.Equal("Available", (await GetVehicleAsync(database, secondVehicleId)).Status);
-        var active = await new RentalReadRepository(new NpgsqlConnectionFactory(database.DataSource))
-            .GetActiveByVehicleIdAsync(VehicleId.Create(firstVehicleId).Value, default);
-        Assert.Equal(first.Value.Id, active?.Id.Value);
+        var active = await new RentalRepository(new NpgsqlConnectionFactory(database.DataSource))
+            .GetActiveByVehicleIdAsync(firstVehicleId, default);
+        Assert.Equal(first.Value.Id, active?.Id);
     }
 
     [Fact]
@@ -92,12 +115,12 @@ public sealed class RentalLifecycleTests
         var firstTask = Task.Run(async () =>
         {
             await gate.Task;
-            return await handler.HandleAsync(new StartRentalCommand(vehicleId, firstDriverId), default);
+            return await handler.Handle(new StartRentalCommand(vehicleId, firstDriverId), default);
         });
         var secondTask = Task.Run(async () =>
         {
             await gate.Task;
-            return await handler.HandleAsync(new StartRentalCommand(vehicleId, secondDriverId), default);
+            return await handler.Handle(new StartRentalCommand(vehicleId, secondDriverId), default);
         });
         gate.SetResult();
         var results = await Task.WhenAll(firstTask, secondTask);
@@ -105,9 +128,9 @@ public sealed class RentalLifecycleTests
         var winner = Assert.Single(results, result => result.IsSuccess);
         var loser = Assert.Single(results, result => result.IsFailure);
         Assert.Equal("vehicle.already_rented", loser.Error.Code);
-        var active = await new RentalReadRepository(new NpgsqlConnectionFactory(database.DataSource))
-            .GetActiveByVehicleIdAsync(VehicleId.Create(vehicleId).Value, default);
-        Assert.Equal(winner.Value.Id, active?.Id.Value);
+        var active = await new RentalRepository(new NpgsqlConnectionFactory(database.DataSource))
+            .GetActiveByVehicleIdAsync(vehicleId, default);
+        Assert.Equal(winner.Value.Id, active?.Id);
     }
 
     [Fact]
@@ -123,12 +146,12 @@ public sealed class RentalLifecycleTests
         var firstTask = Task.Run(async () =>
         {
             await gate.Task;
-            return await handler.HandleAsync(new StartRentalCommand(firstVehicleId, driverId), default);
+            return await handler.Handle(new StartRentalCommand(firstVehicleId, driverId), default);
         });
         var secondTask = Task.Run(async () =>
         {
             await gate.Task;
-            return await handler.HandleAsync(new StartRentalCommand(secondVehicleId, driverId), default);
+            return await handler.Handle(new StartRentalCommand(secondVehicleId, driverId), default);
         });
         gate.SetResult();
         var results = await Task.WhenAll(firstTask, secondTask);
@@ -154,25 +177,25 @@ public sealed class RentalLifecycleTests
         var startHandler = CreateStartHandler(database);
         var finishHandler = CreateFinishHandler(database);
 
-        var first = await startHandler.HandleAsync(new StartRentalCommand(vehicleId, driverId), default);
+        var first = await startHandler.Handle(new StartRentalCommand(vehicleId, driverId), default);
         Assert.True(first.IsSuccess);
 
-        var finished = await finishHandler.HandleAsync(new FinishRentalCommand(first.Value.Id), default);
+        var finished = await finishHandler.Handle(new FinishRentalCommand(first.Value.Id), default);
         Assert.True(finished.IsSuccess);
         Assert.Equal("Finished", finished.Value.Status);
         Assert.NotNull(finished.Value.FinishedAtUtc);
         Assert.True(finished.Value.FinishedAtUtc >= finished.Value.StartedAtUtc);
         Assert.Equal("Available", (await GetVehicleAsync(database, vehicleId)).Status);
 
-        var readRepository = new RentalReadRepository(new NpgsqlConnectionFactory(database.DataSource));
-        var activeAfterFinish = await readRepository.GetActiveByVehicleIdAsync(
-            VehicleId.Create(vehicleId).Value, default);
+        var rentalRepository = new RentalRepository(new NpgsqlConnectionFactory(database.DataSource));
+        var activeAfterFinish = await rentalRepository.GetActiveByVehicleIdAsync(
+            vehicleId, default);
         Assert.Null(activeAfterFinish);
-        var storedFirst = await new GetRentalQueryHandler(readRepository)
-            .HandleAsync(new GetRentalQuery(first.Value.Id), default);
+        var storedFirst = await new GetRentalQueryHandler(rentalRepository)
+            .Handle(new GetRentalQuery(first.Value.Id), default);
         Assert.Equal(finished.Value.FinishedAtUtc, storedFirst.Value.FinishedAtUtc);
 
-        var second = await startHandler.HandleAsync(new StartRentalCommand(vehicleId, driverId), default);
+        var second = await startHandler.Handle(new StartRentalCommand(vehicleId, driverId), default);
         Assert.True(second.IsSuccess);
         Assert.NotEqual(first.Value.Id, second.Value.Id);
         Assert.Equal("Rented", (await GetVehicleAsync(database, vehicleId)).Status);
@@ -188,22 +211,22 @@ public sealed class RentalLifecycleTests
         var startHandler = CreateStartHandler(database);
         var finishHandler = CreateFinishHandler(database);
 
-        var first = await startHandler.HandleAsync(new StartRentalCommand(vehicleId, firstDriverId), default);
+        var first = await startHandler.Handle(new StartRentalCommand(vehicleId, firstDriverId), default);
         Assert.True(first.IsSuccess);
-        var finished = await finishHandler.HandleAsync(new FinishRentalCommand(first.Value.Id), default);
+        var finished = await finishHandler.Handle(new FinishRentalCommand(first.Value.Id), default);
         Assert.True(finished.IsSuccess);
-        var second = await startHandler.HandleAsync(new StartRentalCommand(vehicleId, secondDriverId), default);
+        var second = await startHandler.Handle(new StartRentalCommand(vehicleId, secondDriverId), default);
         Assert.True(second.IsSuccess);
 
-        var repeated = await finishHandler.HandleAsync(new FinishRentalCommand(first.Value.Id), default);
+        var repeated = await finishHandler.Handle(new FinishRentalCommand(first.Value.Id), default);
 
         Assert.Equal("rental.already_finished", repeated.Error.Code);
         Assert.Equal("Rented", (await GetVehicleAsync(database, vehicleId)).Status);
-        var readRepository = new RentalReadRepository(new NpgsqlConnectionFactory(database.DataSource));
-        var active = await readRepository.GetActiveByVehicleIdAsync(VehicleId.Create(vehicleId).Value, default);
-        var storedFirst = await readRepository.GetByIdAsync(
-            FleetRentals.Domain.Rentals.RentalId.Create(first.Value.Id).Value, default);
-        Assert.Equal(second.Value.Id, active?.Id.Value);
+        var rentalRepository = new RentalRepository(new NpgsqlConnectionFactory(database.DataSource));
+        var active = await rentalRepository.GetActiveByVehicleIdAsync(vehicleId, default);
+        var storedFirst = await rentalRepository.GetByIdAsync(
+            first.Value.Id, default);
+        Assert.Equal(second.Value.Id, active?.Id);
         Assert.Equal(finished.Value.FinishedAtUtc, storedFirst?.FinishedAtUtc);
     }
 
@@ -214,7 +237,7 @@ public sealed class RentalLifecycleTests
         var vehicleId = await RegisterVehicleAsync(database, "AB-123");
         var driverId = await RegisterDriverAsync(database, "Alex Driver");
         var started = await CreateStartHandler(database)
-            .HandleAsync(new StartRentalCommand(vehicleId, driverId), default);
+            .Handle(new StartRentalCommand(vehicleId, driverId), default);
         Assert.True(started.IsSuccess);
         var finishHandler = CreateFinishHandler(database);
         var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -222,12 +245,12 @@ public sealed class RentalLifecycleTests
         var firstTask = Task.Run(async () =>
         {
             await gate.Task;
-            return await finishHandler.HandleAsync(new FinishRentalCommand(started.Value.Id), default);
+            return await finishHandler.Handle(new FinishRentalCommand(started.Value.Id), default);
         });
         var secondTask = Task.Run(async () =>
         {
             await gate.Task;
-            return await finishHandler.HandleAsync(new FinishRentalCommand(started.Value.Id), default);
+            return await finishHandler.Handle(new FinishRentalCommand(started.Value.Id), default);
         });
         gate.SetResult();
         var results = await Task.WhenAll(firstTask, secondTask);
@@ -236,26 +259,28 @@ public sealed class RentalLifecycleTests
         var loser = Assert.Single(results, result => result.IsFailure);
         Assert.Equal("rental.already_finished", loser.Error.Code);
         Assert.Equal("Available", (await GetVehicleAsync(database, vehicleId)).Status);
-        var stored = await new RentalReadRepository(new NpgsqlConnectionFactory(database.DataSource))
-            .GetByIdAsync(FleetRentals.Domain.Rentals.RentalId.Create(started.Value.Id).Value, default);
+        var stored = await new RentalRepository(new NpgsqlConnectionFactory(database.DataSource))
+            .GetByIdAsync(started.Value.Id, default);
         Assert.Equal(winner.Value.FinishedAtUtc, stored?.FinishedAtUtc);
     }
 
     private static StartRentalCommandHandler CreateStartHandler(IsolatedDatabase database) =>
-        new(new RentalSessionFactory(new NpgsqlConnectionFactory(database.DataSource)), TimeProvider.System);
+        new(new RentalRepository(new NpgsqlConnectionFactory(database.DataSource)), TimeProvider.System);
 
     private static FinishRentalCommandHandler CreateFinishHandler(IsolatedDatabase database) =>
-        new(new RentalSessionFactory(new NpgsqlConnectionFactory(database.DataSource)), TimeProvider.System);
+        new(
+            new RentalRepository(new NpgsqlConnectionFactory(database.DataSource)),
+            TimeProvider.System);
 
     private static GetActiveRentalByVehicleQueryHandler CreateActiveQueryHandler(
-        IsolatedDatabase database, IRentalReadRepository readRepository) =>
-        new(new VehicleRepository(new NpgsqlConnectionFactory(database.DataSource)), readRepository);
+        IsolatedDatabase database, IRentalRepository rentalRepository) =>
+        new(new VehicleRepository(new NpgsqlConnectionFactory(database.DataSource)), rentalRepository);
 
     private static async Task<Guid> RegisterVehicleAsync(IsolatedDatabase database, string plate)
     {
         var repository = new VehicleRepository(new NpgsqlConnectionFactory(database.DataSource));
         var result = await new RegisterVehicleCommandHandler(repository)
-            .HandleAsync(new RegisterVehicleCommand(plate), default);
+            .Handle(new RegisterVehicleCommand(plate), default);
         Assert.True(result.IsSuccess);
         return result.Value.Id;
     }
@@ -264,7 +289,7 @@ public sealed class RentalLifecycleTests
     {
         var repository = new DriverRepository(new NpgsqlConnectionFactory(database.DataSource));
         var result = await new RegisterDriverCommandHandler(repository)
-            .HandleAsync(new RegisterDriverCommand(name), default);
+            .Handle(new RegisterDriverCommand(name), default);
         Assert.True(result.IsSuccess);
         return result.Value.Id;
     }
@@ -273,7 +298,7 @@ public sealed class RentalLifecycleTests
     {
         var repository = new VehicleRepository(new NpgsqlConnectionFactory(database.DataSource));
         var result = await new GetVehicleQueryHandler(repository)
-            .HandleAsync(new GetVehicleQuery(id), default);
+            .Handle(new GetVehicleQuery(id), default);
         Assert.True(result.IsSuccess);
         return result.Value;
     }

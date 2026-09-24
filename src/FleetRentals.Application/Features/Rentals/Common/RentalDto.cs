@@ -1,6 +1,6 @@
 using FleetRentals.Domain.Rentals;
 
-namespace FleetRentals.Application.Features.Rentals;
+namespace FleetRentals.Application.Features.Rentals.Common;
 
 public sealed record RentalDto(
     Guid Id,
@@ -12,9 +12,9 @@ public sealed record RentalDto(
 {
     public static RentalDto From(Rental rental) =>
         new(
-            rental.Id.Value,
-            rental.VehicleId.Value,
-            rental.DriverId.Value,
+            rental.Id,
+            rental.VehicleId,
+            rental.DriverId,
             rental.StartedAtUtc,
             rental.FinishedAtUtc,
             rental.Status.ToString());

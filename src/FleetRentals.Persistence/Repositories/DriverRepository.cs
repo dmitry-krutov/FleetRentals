@@ -1,8 +1,8 @@
 using Dapper;
-using FleetRentals.Application.Features.Drivers;
+using FleetRentals.Application.Features.Drivers.Common;
 using FleetRentals.Domain.Drivers;
 
-namespace FleetRentals.Persistence;
+namespace FleetRentals.Persistence.Repositories;
 
 public sealed class DriverRepository(NpgsqlConnectionFactory connectionFactory) : IDriverRepository
 {
@@ -16,11 +16,11 @@ public sealed class DriverRepository(NpgsqlConnectionFactory connectionFactory) 
 
         await connection.ExecuteAsync(new CommandDefinition(
             sql,
-            new { Id = driver.Id.Value, Name = driver.Name.Value },
+            new { Id = driver.Id, Name = driver.Name },
             cancellationToken: cancellationToken));
     }
 
-    public async Task<Driver?> GetByIdAsync(DriverId id, CancellationToken cancellationToken)
+    public async Task<Driver?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
     {
         await using var connection = await connectionFactory.OpenAsync(cancellationToken);
         const string sql = """
@@ -30,11 +30,11 @@ public sealed class DriverRepository(NpgsqlConnectionFactory connectionFactory) 
             """;
 
         var row = await connection.QuerySingleOrDefaultAsync<DriverRow>(
-            new CommandDefinition(sql, new { Id = id.Value }, cancellationToken: cancellationToken));
+            new CommandDefinition(sql, new { Id = id }, cancellationToken: cancellationToken));
 
         return row is null
             ? null
-            : Driver.Restore(DriverId.Create(row.Id).Value, DriverName.Create(row.Name).Value);
+            : new Driver(row.Id, row.Name);
     }
 
     private sealed class DriverRow

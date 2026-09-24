@@ -1,37 +1,34 @@
-using FleetRentals.Api.EndpointResults;
 using FleetRentals.Application.Features.Drivers;
+using FleetRentals.Application.Features.Drivers.Common;
+using MediatR;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FleetRentals.Api.Controllers.Drivers;
 
 [Route("drivers")]
-public sealed class DriversController : ApplicationController
+public sealed class DriversController(ISender sender) : ApplicationController
 {
     [HttpPost]
     [ProducesResponseType(typeof(Envelope<DriverDto>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(Envelope), StatusCodes.Status400BadRequest)]
-    public async Task<EndpointResult<DriverDto>> Register(
+    public async Task<IActionResult> Register(
         [FromBody] RegisterDriverRequest request,
-        [FromServices] RegisterDriverCommandHandler handler,
         CancellationToken cancellationToken)
     {
-        var result = await handler.HandleAsync(new RegisterDriverCommand(request.Name), cancellationToken);
-
-        if (result.IsFailure)
-            return result;
-
-        return EndpointResult<DriverDto>.Created($"/drivers/{result.Value.Id}", result.Value);
+        var command = new RegisterDriverCommand(request.Name);
+        var result = await sender.Send(command, cancellationToken);
+        return CreatedResult(result, "drivers", driver => driver.Id);
     }
 
     [HttpGet("{id}")]
     [ProducesResponseType(typeof(Envelope<DriverDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(Envelope), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(Envelope), StatusCodes.Status404NotFound)]
-    public async Task<EndpointResult<DriverDto>> GetById(
+    public async Task<IActionResult> GetById(
         [FromRoute] Guid id,
-        [FromServices] GetDriverQueryHandler handler,
         CancellationToken cancellationToken)
     {
-        return await handler.HandleAsync(new GetDriverQuery(id), cancellationToken);
+        var query = new GetDriverQuery(id);
+        return FromResult(await sender.Send(query, cancellationToken));
     }
 }

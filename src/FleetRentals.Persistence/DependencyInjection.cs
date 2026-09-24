@@ -1,6 +1,10 @@
 using FleetRentals.Application.Features.Drivers;
+using FleetRentals.Application.Features.Drivers.Common;
 using FleetRentals.Application.Features.Rentals;
+using FleetRentals.Application.Features.Rentals.Common;
 using FleetRentals.Application.Features.Vehicles;
+using FleetRentals.Application.Features.Vehicles.Common;
+using FleetRentals.Persistence.Repositories;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -19,8 +23,7 @@ public static class DependencyInjection
         services.AddSingleton<NpgsqlConnectionFactory>();
         services.AddScoped<IVehicleRepository, VehicleRepository>();
         services.AddScoped<IDriverRepository, DriverRepository>();
-        services.AddScoped<IRentalReadRepository, RentalReadRepository>();
-        services.AddScoped<IRentalSessionFactory, RentalSessionFactory>();
+        services.AddScoped<IRentalRepository, RentalRepository>();
 
         return services;
     }

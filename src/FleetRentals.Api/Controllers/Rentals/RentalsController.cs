@@ -1,41 +1,37 @@
-using FleetRentals.Api.EndpointResults;
 using FleetRentals.Application.Features.Rentals;
+using FleetRentals.Application.Features.Rentals.Common;
+using MediatR;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FleetRentals.Api.Controllers.Rentals;
 
 [Route("rentals")]
-public sealed class RentalsController : ApplicationController
+public sealed class RentalsController(ISender sender) : ApplicationController
 {
     [HttpPost]
     [ProducesResponseType(typeof(Envelope<RentalDto>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(Envelope), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(Envelope), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(Envelope), StatusCodes.Status409Conflict)]
-    public async Task<EndpointResult<RentalDto>> Start(
+    public async Task<IActionResult> Start(
         [FromBody] StartRentalRequest request,
-        [FromServices] StartRentalCommandHandler handler,
         CancellationToken cancellationToken)
     {
-        var result = await handler.HandleAsync(
-            new StartRentalCommand(request.VehicleId, request.DriverId), cancellationToken);
-
-        if (result.IsFailure)
-            return result;
-
-        return EndpointResult<RentalDto>.Created($"/rentals/{result.Value.Id}", result.Value);
+        var command = new StartRentalCommand(request.VehicleId, request.DriverId);
+        var result = await sender.Send(command, cancellationToken);
+        return CreatedResult(result, "rentals", rental => rental.Id);
     }
 
     [HttpGet("{id}")]
     [ProducesResponseType(typeof(Envelope<RentalDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(Envelope), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(Envelope), StatusCodes.Status404NotFound)]
-    public async Task<EndpointResult<RentalDto>> GetById(
+    public async Task<IActionResult> GetById(
         [FromRoute] Guid id,
-        [FromServices] GetRentalQueryHandler handler,
         CancellationToken cancellationToken)
     {
-        return await handler.HandleAsync(new GetRentalQuery(id), cancellationToken);
+        var query = new GetRentalQuery(id);
+        return FromResult(await sender.Send(query, cancellationToken));
     }
 
     [HttpPost("{id}/finish")]
@@ -43,11 +39,11 @@ public sealed class RentalsController : ApplicationController
     [ProducesResponseType(typeof(Envelope), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(Envelope), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(Envelope), StatusCodes.Status409Conflict)]
-    public async Task<EndpointResult<RentalDto>> Finish(
+    public async Task<IActionResult> Finish(
         [FromRoute] Guid id,
-        [FromServices] FinishRentalCommandHandler handler,
         CancellationToken cancellationToken)
     {
-        return await handler.HandleAsync(new FinishRentalCommand(id), cancellationToken);
+        var command = new FinishRentalCommand(id);
+        return FromResult(await sender.Send(command, cancellationToken));
     }
 }

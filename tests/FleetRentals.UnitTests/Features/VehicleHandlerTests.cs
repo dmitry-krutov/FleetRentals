@@ -1,5 +1,7 @@
 using FleetRentals.Application.Features.Vehicles;
+using FleetRentals.Application.Features.Vehicles.Common;
 using FleetRentals.Domain.Vehicles;
+using FluentValidation;
 using Xunit;
 
 namespace FleetRentals.UnitTests.Features;
@@ -10,12 +12,10 @@ public sealed class VehicleHandlerTests
     public async Task Registration_rejects_invalid_plate_without_writing()
     {
         var repository = new FakeVehicleRepository();
-        var handler = new RegisterVehicleCommandHandler(repository);
-
-        var result = await handler.HandleAsync(new RegisterVehicleCommand("  "), default);
-
-        Assert.True(result.IsFailure);
-        Assert.Equal("vehicle.license_plate.required", result.Error.Code);
+        var validator = new RegisterVehicleValidator();
+        var exception = await Assert.ThrowsAsync<ValidationException>(() =>
+            validator.ValidateAndThrowAsync(new RegisterVehicleCommand("  ")));
+        Assert.Contains(exception.Errors, error => error.ErrorCode == "vehicle.license_plate.required");
         Assert.Equal(0, repository.AddCalls);
     }
 
@@ -25,11 +25,11 @@ public sealed class VehicleHandlerTests
         var repository = new FakeVehicleRepository { AddResult = false };
         var handler = new RegisterVehicleCommandHandler(repository);
 
-        var result = await handler.HandleAsync(new RegisterVehicleCommand(" ab-123 "), default);
+        var result = await handler.Handle(new RegisterVehicleCommand(" ab-123 "), default);
 
         Assert.True(result.IsFailure);
         Assert.Equal("vehicle.license_plate.exists", result.Error.Code);
-        Assert.Equal("AB-123", repository.LastAdded?.LicensePlate.Value);
+        Assert.Equal("AB-123", repository.LastAdded?.LicensePlate);
     }
 
     [Fact]
@@ -37,11 +37,11 @@ public sealed class VehicleHandlerTests
     {
         var repository = new FakeVehicleRepository();
         var registered = await new RegisterVehicleCommandHandler(repository)
-            .HandleAsync(new RegisterVehicleCommand(" ab-123 "), default);
+            .Handle(new RegisterVehicleCommand(" ab-123 "), default);
 
         Assert.True(registered.IsSuccess);
         var loaded = await new GetVehicleQueryHandler(repository)
-            .HandleAsync(new GetVehicleQuery(registered.Value.Id), default);
+            .Handle(new GetVehicleQuery(registered.Value.Id), default);
 
         Assert.True(loaded.IsSuccess);
         Assert.Equal("AB-123", loaded.Value.LicensePlate);
@@ -54,10 +54,12 @@ public sealed class VehicleHandlerTests
         var repository = new FakeVehicleRepository();
         var handler = new GetVehicleQueryHandler(repository);
 
-        var empty = await handler.HandleAsync(new GetVehicleQuery(Guid.Empty), default);
-        var missing = await handler.HandleAsync(new GetVehicleQuery(Guid.NewGuid()), default);
+        var validator = new GetVehicleValidator();
+        var exception = await Assert.ThrowsAsync<ValidationException>(() =>
+            validator.ValidateAndThrowAsync(new GetVehicleQuery(Guid.Empty)));
+        var missing = await handler.Handle(new GetVehicleQuery(Guid.NewGuid()), default);
 
-        Assert.Equal("vehicle.id.invalid", empty.Error.Code);
+        Assert.Contains(exception.Errors, error => error.ErrorCode == "vehicle.id.invalid");
         Assert.Equal("vehicle.not_found", missing.Error.Code);
         Assert.Equal(1, repository.GetCalls);
     }
@@ -79,7 +81,7 @@ public sealed class VehicleHandlerTests
             return Task.FromResult(AddResult);
         }
 
-        public Task<Vehicle?> GetByIdAsync(VehicleId id, CancellationToken cancellationToken)
+        public Task<Vehicle?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
         {
             GetCalls++;
             return Task.FromResult(LastAdded?.Id == id ? LastAdded : null);

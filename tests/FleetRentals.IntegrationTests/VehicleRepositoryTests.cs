@@ -1,6 +1,7 @@
 using FleetRentals.Application.Features.Vehicles;
 using FleetRentals.Domain.Vehicles;
 using FleetRentals.Persistence;
+using FleetRentals.Persistence.Repositories;
 using Xunit;
 
 namespace FleetRentals.IntegrationTests;
@@ -14,9 +15,9 @@ public sealed class VehicleRepositoryTests
         var repository = new VehicleRepository(new NpgsqlConnectionFactory(database.DataSource));
         var register = new RegisterVehicleCommandHandler(repository);
 
-        var created = await register.HandleAsync(new RegisterVehicleCommand(" ab-123 "), default);
+        var created = await register.Handle(new RegisterVehicleCommand(" ab-123 "), default);
         var loaded = await new GetVehicleQueryHandler(repository)
-            .HandleAsync(new GetVehicleQuery(created.Value.Id), default);
+            .Handle(new GetVehicleQuery(created.Value.Id), default);
 
         Assert.True(created.IsSuccess);
         Assert.True(loaded.IsSuccess);
@@ -32,12 +33,12 @@ public sealed class VehicleRepositoryTests
         var repository = new VehicleRepository(new NpgsqlConnectionFactory(database.DataSource));
         var register = new RegisterVehicleCommandHandler(repository);
 
-        var first = await register.HandleAsync(new RegisterVehicleCommand("ab-123"), default);
-        var duplicate = await register.HandleAsync(new RegisterVehicleCommand("AB-123"), default);
+        var first = await register.Handle(new RegisterVehicleCommand("ab-123"), default);
+        var duplicate = await register.Handle(new RegisterVehicleCommand("AB-123"), default);
 
         Assert.True(first.IsSuccess);
         Assert.True(duplicate.IsFailure);
         Assert.Equal("vehicle.license_plate.exists", duplicate.Error.Code);
-        Assert.NotNull(await repository.GetByIdAsync(VehicleId.Create(first.Value.Id).Value, default));
+        Assert.NotNull(await repository.GetByIdAsync(first.Value.Id, default));
     }
 }

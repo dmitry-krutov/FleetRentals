@@ -1,52 +1,49 @@
-using FleetRentals.Api.EndpointResults;
 using FleetRentals.Application.Features.Rentals;
+using FleetRentals.Application.Features.Rentals.Common;
 using FleetRentals.Application.Features.Vehicles;
+using FleetRentals.Application.Features.Vehicles.Common;
+using MediatR;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FleetRentals.Api.Controllers.Vehicles;
 
 [Route("vehicles")]
-public sealed class VehiclesController : ApplicationController
+public sealed class VehiclesController(ISender sender) : ApplicationController
 {
     [HttpPost]
     [ProducesResponseType(typeof(Envelope<VehicleDto>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(Envelope), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(Envelope), StatusCodes.Status409Conflict)]
-    public async Task<EndpointResult<VehicleDto>> Register(
+    public async Task<IActionResult> Register(
         [FromBody] RegisterVehicleRequest request,
-        [FromServices] RegisterVehicleCommandHandler handler,
         CancellationToken cancellationToken)
     {
-        var result = await handler.HandleAsync(
-            new RegisterVehicleCommand(request.LicensePlate), cancellationToken);
-
-        if (result.IsFailure)
-            return result;
-
-        return EndpointResult<VehicleDto>.Created($"/vehicles/{result.Value.Id}", result.Value);
+        var command = new RegisterVehicleCommand(request.LicensePlate);
+        var result = await sender.Send(command, cancellationToken);
+        return CreatedResult(result, "vehicles", vehicle => vehicle.Id);
     }
 
     [HttpGet("{id}")]
     [ProducesResponseType(typeof(Envelope<VehicleDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(Envelope), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(Envelope), StatusCodes.Status404NotFound)]
-    public async Task<EndpointResult<VehicleDto>> GetById(
+    public async Task<IActionResult> GetById(
         [FromRoute] Guid id,
-        [FromServices] GetVehicleQueryHandler handler,
         CancellationToken cancellationToken)
     {
-        return await handler.HandleAsync(new GetVehicleQuery(id), cancellationToken);
+        var query = new GetVehicleQuery(id);
+        return FromResult(await sender.Send(query, cancellationToken));
     }
 
     [HttpGet("{id}/active-rental")]
     [ProducesResponseType(typeof(Envelope<RentalDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(Envelope), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(Envelope), StatusCodes.Status404NotFound)]
-    public async Task<EndpointResult<RentalDto>> GetActiveRental(
+    public async Task<IActionResult> GetActiveRental(
         [FromRoute] Guid id,
-        [FromServices] GetActiveRentalByVehicleQueryHandler handler,
         CancellationToken cancellationToken)
     {
-        return await handler.HandleAsync(new GetActiveRentalByVehicleQuery(id), cancellationToken);
+        var query = new GetActiveRentalByVehicleQuery(id);
+        return FromResult(await sender.Send(query, cancellationToken));
     }
 }
